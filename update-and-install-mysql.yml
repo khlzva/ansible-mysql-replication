@@ -1,0 +1,42 @@
+- name: Update the system and install MySQL
+  hosts: servers
+  remote_user: user
+  any_errors_fatal: true
+  become: yes
+  serial: 1
+
+  tasks:
+
+  - name: Update
+    command: apt-get update -y --allow-releaseinfo-change
+
+  - name: Upgrade
+    apt:
+      upgrade: dist
+      force_apt_get: yes
+
+  - name: Install gnupg
+    apt:
+      name: gnupg
+      state: latest
+
+  - name: Download MySQL deb
+    get_url:
+      url: https://dev.mysql.com/get/mysql-apt-config_0.8.19-1_all.deb
+      dest: /path/to/store/deb
+
+  - name: Install a .deb package
+    apt:
+      deb: /path/to/deb
+
+  - name: apt update
+    apt:
+      update_cache: yes
+
+  - name: Install MySQL server
+    apt:
+      name: "{{ item.name }}"
+      state: latest
+    with_items:
+      - {name: 'mysql-community-server'}
+      - {name: 'python3-mysqldb'}

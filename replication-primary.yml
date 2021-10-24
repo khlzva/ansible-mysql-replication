@@ -1,0 +1,68 @@
+- name: Primary configuration
+  hosts: sql-one
+  remote_user: user
+  any_errors_fatal: true
+  become: yes
+  vars_files:
+    - mysql_pass
+
+  tasks:
+
+  - name: Create DB user with all database privileges
+    community.mysql.mysql_user:
+      name: replicator
+      host: [internal ip address of Replica Host]
+      password: "{{  mysql_pass }}"
+      encrypted: no
+      priv: '*.*:REPLICATION SLAVE'
+      state: present
+
+  - name: Change MySQL config
+    lineinfile:
+      path: /etc/mysql/my.cnf
+      state: present
+      line: "{{ item.line }}"
+    with_items:
+      - {line: '[mysqld]'}
+      - {line: 'pid-file         = /var/run/mysqld/mysqld.pid'}
+      - {line: 'socket           = /var/run/mysqld/mysqld.sock'}
+      - {line: 'datadir          = /var/lib/mysql'}
+      - {line: 'secure-file-priv = NULL'}
+      - {line: 'server_id        = 1'}
+      - {line: 'log_bin          = mysql-bin'}
+      - {line: 'bind-address     = [internal ip address]'}
+
+  - name: Restart MySQL
+    service:
+      name: mysql
+      state: restarted
+
+  - name: Create a new database
+    mysql_db:
+      name: [database name]
+      state: present
+
+  - name: Dump database
+    mysql_db:
+      state: dump
+      name: [database name]
+      target: /path/to/dump/dump.sql
+
+  - name: Flush tables
+    command: mysql -u root -e "FLUSH TABLES WITH READ LOCK;"
+
+  - name: Get Primary status
+    mysql_replication:
+       mode: getprimary
+    register: primary
+
+  - debug: var=primary.File
+  - debug: var=primary.Position
+
+  - name: Unlock tables
+    command: mysql -uroot -e "UNLOCK TABLES;"
+
+  - name: Download file from server
+    ansible.builtin.fetch:
+      src: /path/to/dump/dump.sql
+      dest: /path/to/store/dump/locally

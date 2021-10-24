@@ -1,0 +1,85 @@
+- name: Replica configuration
+  hosts: sql-two
+  remote_user: user
+  any_errors_fatal: true
+  become: yes
+  vars_files:
+    - mysql_pass
+
+  tasks:
+
+  - name: Copy new-db.sql to sql-two
+    copy:
+      src: /local/path/to/dump.sql
+      dest: /tmp/dump.sql
+
+  - name: Create a new database
+    mysql_db:
+      name: [database name]
+      state: present
+
+  - name: Restore database
+    mysql_db:
+      name: [database name]
+      state: import
+      target: /tmp/dump.sql
+
+  - name: Change MySQL config
+    lineinfile:
+      path: /etc/mysql/my.cnf
+      state: present
+      line: "{{ item.line }}"
+    with_items:
+      - {line: '[mysqld]'}
+      - {line: 'pid-file         = /var/run/mysqld/mysqld.pid'}
+      - {line: 'socket           = /var/run/mysqld/mysqld.sock'}
+      - {line: 'datadir          = /var/lib/mysql'}
+      - {line: 'secure-file-priv = NULL'}
+      - {line: 'server_id        = 2'}
+      - {line: 'log_bin          = mysql-bin'}
+      - {line: 'relay-log        = /var/lib/mysql/mysql-relay-bin'}
+      - {line: 'relay-log-index  = /var/lib/mysql/mysql-relay-bin.index'}
+      - {line: 'read_only        = 1'}
+      - {line: 'bind-address     = [internal ip address]'}
+
+  - name: Restart MySQL
+    service:
+      name: mysql
+      state: restarted
+
+  - name: Stop MySQL Replica
+    mysql_replication:
+      mode: stopreplica
+
+  - name: Reset MySQL Replica
+    community.mysql.mysql_replication:
+       mode: resetreplica
+
+  - name: Change Primary Host
+    mysql_replication:
+      mode: changeprimary
+      master_host: [internal ip address of Primary Host]
+      master_user: replicator
+      master_password: "{{  mysql_pass  }}"
+      master_log_file: [log_file]
+      master_log_pos: [log_pos]
+
+  - name: Start MySQL Replica
+    mysql_replication:
+      mode: startreplica
+
+  - name: Get Replica status
+    mysql_replication:
+       mode: getreplica
+    register: replica
+
+  - debug:
+      msg:
+      - "Reolica IO State: {{  replica.Replica_IO_State  }}"
+      - "Primary Host: {{  replica.Source_Host  }}"
+      - "Primary Host: {{  replica.Source_User  }}"
+      - "Primary Log File: {{  replica.Source_Log_File  }}"
+      - "Read Primary Log Position: {{  replica.Read_Source_Log_Pos  }}"
+      - "Replica IO Running: {{  replica.Replica_IO_Running  }}"
+      - "Replica SQL Running: {{  replica.Replica_SQL_Running  }}"
+      - "Replica SQL Running State: {{  replica.Replica_SQL_Running_State  }}"
